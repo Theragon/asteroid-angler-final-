@@ -2,20 +2,25 @@
 //  Game.m
 //  iOS App Dev
 //
-//  Created by Sveinn Fannar Kristjansson on 9/17/13.
-//  Copyright 2013 Sveinn Fannar Kristjansson. All rights reserved.
+//  Created by Loli on 26.09.2013
+//  Copyright(c) Loli(r) 2013. All rights reserved.
 //
 
 #import "GameScene.h"
-#import "Tank.h"
+#import "Angler.h"
 #import "InputLayer.h"
 #import "ChipmunkAutoGeometry.h"
-#import "Goal.h"
+#import "Enemy.h"
+#import "Crystal.h"
 #import "SimpleAudioEngine.h"
+#import "HUDLayer.h"
+#import "MenuScene.h"
 
 @implementation GameScene
 
 #pragma mark - Initilization
+
+
 
 - (id)init
 {
@@ -24,6 +29,9 @@
     {
         srandom(time(NULL));
         _winSize = [CCDirector sharedDirector].winSize;
+        
+        _crystals = [[NSMutableArray alloc] init];
+        _rocks = [[NSMutableArray alloc] init];
         
         // Load configuration file
         _configuration = [NSDictionary dictionaryWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"Configuration" ofType:@"plist"]];
@@ -43,7 +51,21 @@
         // Setup world
         [self generateRandomWind];
         [self setupGraphicsLandscape];
-        [self setupPhysicsLandscape];
+        [self setupPhysicsLandscape1];
+        [self setupPhysicsLandscape2];
+        
+        
+        _menu = [MenuScene node];
+        _alive = YES;
+        
+        // Set up HUD
+        _hud = [HUDLayer node];
+        [self addChild:_hud z:2];
+        _points = 0;
+        _lives = 3;
+
+        [_hud updateLives: _lives];
+        [_hud updateScore: _points];
         
         // Create debug node
         CCPhysicsDebugNode *debugNode = [CCPhysicsDebugNode debugNodeForChipmunkSpace:_space];
@@ -52,13 +74,60 @@
         
         // Add a tank
         NSString *tankPositionString = _configuration[@"tankPosition"];
-        _tank = [[Tank alloc] initWithSpace:_space position:CGPointFromString(tankPositionString)];
-        [_gameNode addChild:_tank];
+        _angler = [[Angler alloc] initWithSpace:_space position:CGPointFromString(tankPositionString)];
+        [_gameNode addChild:_angler];
+      
+        // Enemy asteroids
+        NSUInteger lowerBound = 60;
+        NSUInteger upperBound = 260;
+        bool first = YES;
         
-        // Add goal
-        _goal = [[Goal alloc] initWithSpace:_space position:CGPointFromString(_configuration[@"goalPosition"])];
-        [_gameNode addChild:_goal];
-        
+        for (NSUInteger i = 1; i < 2048; ++i)
+        {
+            if(i%192==0)
+            {
+                if(first == NO)
+                {
+                    NSUInteger rndValue = lowerBound + arc4random() % (upperBound - lowerBound);
+                    _enemy = [[Enemy alloc] initWithSpace:_space position:ccp(i, rndValue)];
+                    [_gameNode addChild:_enemy];
+                    [_rocks addObject:_enemy];
+                    
+                    
+                }
+                
+                first = NO;
+            }
+            
+            if(i%128==0)
+            {
+                if(first == NO)
+                {
+                     NSUInteger rndValue = lowerBound + arc4random() % (upperBound - lowerBound);
+                    _crystal = [[Crystal alloc] initWithSpace:_space position:ccp(i, rndValue)];
+                    [_gameNode addChild:_crystal];
+                    [_crystals addObject:_crystal];
+                }
+            }
+        }
+/*
+        for (NSUInteger i = 1; i < 2048; ++i)
+        {
+            if(i%256==0)
+            {
+                if(first == NO)
+                {
+                    NSUInteger rndValue = lowerBound + arc4random() % (upperBound - lowerBound);
+                
+                    _crystal = [[Crystal alloc] initWithSpace:_space position:ccp(i, rndValue)];
+                    [_gameNode addChild:_crystal];
+                    [_crystals addObject:_crystal];
+                }
+                
+                first = NO;
+            }
+        }
+*/
         // Create a input layer
         InputLayer *inputLayer = [[InputLayer alloc] init];
         inputLayer.delegate = self;
@@ -66,7 +135,7 @@
         
         // Setup particle system
         _splashParticles = [CCParticleSystemQuad particleWithFile:@"WaterSplash.plist"];
-        _splashParticles.position = _goal.position;
+        _splashParticles.position = _angler.position;
         [_splashParticles stopSystem];
         [_gameNode addChild:_splashParticles];
         
@@ -75,6 +144,10 @@
         
         // Your initilization code goes here
         [self scheduleUpdate];
+//        _followTank = YES;
+        
+        flying = NO;
+        [_angler thrust];
     }
     return self;
 }
@@ -87,61 +160,125 @@
     ChipmunkBody *firstChipmunkBody = firstBody->data;
     ChipmunkBody *secondChipmunkBody = secondBody->data;
     
-    if ((firstChipmunkBody == _tank.chipmunkBody && secondChipmunkBody == _goal.chipmunkBody) ||
-        (firstChipmunkBody == _goal.chipmunkBody && secondChipmunkBody == _tank.chipmunkBody)){
-        NSLog(@"TANK HIT GOAL :D:D:D xoxoxo");
+    for (ChipmunkShape *shape in _space.shapes )
+    {
         
-        // Play sfx
-        [[SimpleAudioEngine sharedEngine] playEffect:@"Impact.wav" pitch:(CCRANDOM_0_1() * 0.3f) + 1 pan:0 gain:1];
-        
-        // Remove physics body
-        [_space smartRemove:_tank.chipmunkBody];
-        for (ChipmunkShape *shape in _tank.chipmunkBody.shapes) {
-            [_space smartRemove:shape];
+        if ((firstChipmunkBody == _angler.chipmunkBody && secondChipmunkBody == shape.body) ||
+            (firstChipmunkBody == shape.body && secondChipmunkBody == _angler.chipmunkBody)){
+           
+                Crystal *collectedCrystal;
+                if([shape.group  isEqual: @"crystal"])
+                {
+                    
+                    for(Crystal *c in _crystals)
+                    {
+                        if([shape.body isEqual: c.chipmunkBody])
+                        {
+                            collectedCrystal = c;
+                            [c removeFromParentAndCleanup:YES];
+                        }
+                    }
+                    [_crystals removeObject:collectedCrystal];
+                    // Remove physics body
+                     [_space smartRemove: shape];
+                     for (ChipmunkShape *cshape in shape.body.shapes) {
+                        [_space smartRemove:cshape];
+                     }
+                    _points +=100;
+                    [_hud updateScore: _points];
+                    break;
+                }
+            
+            if([shape.group  isEqual: @"rocks"])
+            {
+                Enemy *explodedRock;
+                for(Enemy *c in _rocks)
+                {
+                    if([shape.body isEqual: c.chipmunkBody])
+                    {
+                        explodedRock = c;
+                        [c removeFromParentAndCleanup:YES];
+                    }
+                }
+                [_rocks removeObject:explodedRock];
+                // Remove physics body
+                [_space smartRemove: shape];
+                for (ChipmunkShape *cshape in shape.body.shapes) {
+                    [_space smartRemove:cshape];
+                }
+                // Remove tank from cocos2d
+                [explodedRock removeFromParentAndCleanup:YES];
+                _splashParticles.position = explodedRock.position;
+                
+                // Play particle effect
+                [_splashParticles resetSystem];
+                [_hud updateLives: --_lives];
+                
+                if(_lives == 0)
+                {
+                    [self death:space];
+                }
+                else if(_alive)
+                {
+                    [_angler crash:_alive];
+                }
+ 
+                break;
+            }
+            _alive = NO;
+            _lives = 0;
+            [self death: _space];
+            
+            break;
         }
-        
-        // Remove tank from cocos2d
-        [_tank removeFromParentAndCleanup:YES];
-        
-        // Play particle effect
-        [_splashParticles resetSystem];
     }
-    
     return YES;
 }
 
 - (void)setupGraphicsLandscape
 {
-    // Sky
-    _skyLayer = [CCLayerGradient layerWithColor:ccc4(89, 67, 245, 255) fadingTo:ccc4(67, 219, 245, 255)];
-    [self addChild:_skyLayer];
+    // Space
+    _spaceLayer = [CCSprite spriteWithFile:@"Deep-Space.png"];
+    _spaceLayer.anchorPoint=ccp(0,0);
+    [self addChild:_spaceLayer z:0];
+    _hud.anchorPoint=ccp(0,0);
     
+    // Asteroids
     for (NSUInteger i = 0; i < 4; ++i)
     {
-        CCSprite *cloud = [CCSprite spriteWithFile:@"Cloud.png"];
-        cloud.position = ccp(CCRANDOM_0_1() * _winSize.width, (CCRANDOM_0_1() * 200) + _winSize.height / 2);
-        [_skyLayer addChild:cloud];
+        CCSprite *asteroid = [CCSprite spriteWithFile:@"asteroid_mathilde.png"];
+        asteroid.position = ccp(CCRANDOM_0_1() * _winSize.width, (CCRANDOM_0_1() * 200) + _winSize.height / 2);
+        [_spaceLayer addChild:asteroid z:1 ];
     }
-    
+
     _parallaxNode = [CCParallaxNode node];
-    [self addChild:_parallaxNode];
+    [self addChild:_parallaxNode z:1];
     
-    CCSprite *mountains = [CCSprite spriteWithFile:@"BackgroundMountains.png"];
-    mountains.anchorPoint = ccp(0, 0);
-    [_parallaxNode addChild:mountains z:0 parallaxRatio:ccp(0.5f, 1.0f) positionOffset:CGPointZero];
+    CCSprite *asteroids1 = [CCSprite spriteWithFile:@"asteroids_1.png"];
+    asteroids1.anchorPoint = ccp(0, 0);
+    [_parallaxNode addChild:asteroids1 z:0 parallaxRatio:ccp(0.5f, 1.0f) positionOffset:CGPointZero];
     
-    CCSprite *landscape = [CCSprite spriteWithFile:@"Landscape.png"];
-    landscape.anchorPoint = ccp(0, 0);
-    _landscapeWidth = landscape.contentSize.width;
-    [_parallaxNode addChild:landscape z:1 parallaxRatio:ccp(1.0f, 1.0f) positionOffset:CGPointZero];
+//    CCSprite *asteroids2 = [CCSprite spriteWithFile:@"asteroids_2.png"];
+//    asteroids2.anchorPoint = ccp(0, 0);
+//    [_parallaxNode addChild:asteroids2 z:0 parallaxRatio:ccp(0.5f, 1.0f) positionOffset:CGPointZero];
+    
+    CCSprite *landscapeLower = [CCSprite spriteWithFile:@"AsteroidFieldLower.png"];
+    landscapeLower.anchorPoint = ccp(0, 0);
+    _landscapeWidth = landscapeLower.contentSize.width;
+    [_parallaxNode addChild:landscapeLower z:3 parallaxRatio:ccp(1.0f, 1.0f) positionOffset:CGPointZero];
+    
+    CCSprite *landscapeUpper = [CCSprite spriteWithFile:@"AsteroidFieldUpper.png"];
+    landscapeUpper.anchorPoint = ccp(0, 0);
+    _landscapeWidth = landscapeUpper.contentSize.width;
+   [_parallaxNode addChild:landscapeUpper z:3 parallaxRatio:ccp(1.0f, 1.0f) positionOffset:CGPointZero];
     
     _gameNode = [CCNode node];
-    [_parallaxNode addChild:_gameNode z:2 parallaxRatio:ccp(1.0f, 1.0f) positionOffset:CGPointZero];
+    [_parallaxNode addChild:_gameNode z:3 parallaxRatio:ccp(1.0f, 1.0f) positionOffset:CGPointZero];
 }
 
-- (void)setupPhysicsLandscape
+- (void)setupPhysicsLandscape1
 {
-    NSURL *url = [[NSBundle mainBundle] URLForResource:@"Landscape" withExtension:@"png"];
+    NSURL *url = [[NSBundle mainBundle] URLForResource:@"LowerCollisionField" withExtension:@"png"];
     ChipmunkImageSampler *sampler = [ChipmunkImageSampler samplerWithImageFile:url isMask:NO];
     
     ChipmunkPolylineSet *contour = [sampler marchAllWithBorder:NO hard:YES];
@@ -156,11 +293,27 @@
     }
 }
 
-- (void)generateRandomWind
+- (void)setupPhysicsLandscape2
 {
-    _windSpeed = CCRANDOM_MINUS1_1() * [_configuration[@"windMaxSpeed"] floatValue];
+    NSURL *url = [[NSBundle mainBundle] URLForResource:@"UpperCollisionField" withExtension:@"png"];
+    ChipmunkImageSampler *sampler = [ChipmunkImageSampler samplerWithImageFile:url isMask:NO];
+    
+    ChipmunkPolylineSet *contour = [sampler marchAllWithBorder:YES hard:YES];
+    ChipmunkPolyline *line = [contour lineAtIndex:0];
+    ChipmunkPolyline *simpleLine = [line simplifyCurves:1];
+    
+    ChipmunkBody *terrainBody = [ChipmunkBody staticBody];
+    NSArray *terrainShapes = [simpleLine asChipmunkSegmentsWithBody:terrainBody radius:0 offset:cpvzero];
+    for (ChipmunkShape *shape in terrainShapes)
+    {
+        [_space addShape:shape];
+    }
 }
 
+- (void)generateRandomWind
+{
+    _windSpeed = CCRANDOM_0_1() * [_configuration[@"windMaxSpeed"] floatValue];
+}
 
 #pragma mark - Update
 
@@ -174,15 +327,23 @@
         _accumulator -= fixedTimeStep;
     }
     
-    for (CCSprite *cloud in _skyLayer.children)
+    if(flying && _alive)
+    {
+        [_angler jump];
+    }
+
+    _points += _angler.position.x/100;
+    [_hud updateScore: _points];
+    
+    for (CCSprite *cloud in _spaceLayer.children)
     {
         CGFloat cloudHalfWidth = cloud.contentSize.width / 2;
         CGPoint newPosition = ccp(cloud.position.x + (_windSpeed * delta), cloud.position.y);
         if (newPosition.x < -cloudHalfWidth)
         {
-            newPosition.x = _skyLayer.contentSize.width + cloudHalfWidth;
+            newPosition.x = _spaceLayer.contentSize.width + cloudHalfWidth;
         }
-        else if (newPosition.x > (_skyLayer.contentSize.width + cloudHalfWidth))
+        else if (newPosition.x > (_spaceLayer.contentSize.width + cloudHalfWidth))
         {
             newPosition.x = -cloudHalfWidth;
         }
@@ -191,25 +352,49 @@
         cloud.position = newPosition;
     }
     
-    if (_followTank == YES)
+    if(_angler.position.x > 2048)
     {
-        if (_tank.position.x >= (_winSize.width / 2) && _tank.position.x < (_landscapeWidth - (_winSize.width / 2)))
-        {
-            _parallaxNode.position = ccp(-(_tank.position.x - (_winSize.width / 2)), 0);
-        }
+        [_menu gameOver:_points win: YES];
+    }
+    
+    if (_angler.position.x >= (_winSize.width / 2) && _angler.position.x < (_landscapeWidth - (_winSize.width / 2)))
+    {
+        _parallaxNode.position = ccp(-(_angler.position.x - (_winSize.width / 2)), 0);
     }
 }
 
 #pragma mark - My Touch Delegate Methods
-
-- (void)touchEndedAtPositon:(CGPoint)position afterDelay:(NSTimeInterval)delay
+- (void)touchBegan
 {
-    position = [_gameNode convertToNodeSpace:position];
-    NSLog(@"touch: %@", NSStringFromCGPoint(position));
-    NSLog(@"tank: %@", NSStringFromCGPoint(_tank.position));
-    _followTank = YES;
-    cpVect normalizedVector = cpvnormalize(cpvsub(position, _tank.position));
-    [_tank jumpWithPower:delay * 300 vector:normalizedVector];
+    flying = YES;
 }
+
+-(void) touchEnded
+{
+    flying = NO;
+}
+
+-(void) death:(ChipmunkSpace*)space
+{
+    // Play sfx
+    [[SimpleAudioEngine sharedEngine] playEffect:@"Impact.wav" pitch:(CCRANDOM_0_1() * 0.3f) + 1 pan:0 gain:1];
+    
+    // Remove physics body
+    [space smartRemove: _angler.chipmunkBody];
+    for (ChipmunkShape *shape in _angler.chipmunkBody.shapes) {
+        [space smartRemove:shape];
+    }
+    
+    // Remove tank from cocos2d
+    [_angler removeFromParentAndCleanup:YES];
+    _splashParticles.position = _angler.position;
+    
+    // Play particle effect
+    [_splashParticles resetSystem];
+    _alive = NO;
+    [_menu gameOver:_points win: NO];
+}
+
+
 
 @end

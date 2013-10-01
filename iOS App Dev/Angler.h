@@ -2,19 +2,22 @@
 //  Tank.h
 //  iOS App Dev
 //
-//  Created by Sveinn Fannar Kristjansson on 9/19/13.
-//  Copyright 2013 Sveinn Fannar Kristjansson. All rights reserved.
+//  Created by Loli on 26.09.2013
+//  Copyright(c) Loli(r) 2013. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
 #import "cocos2d.h"
 
-@interface Tank : CCPhysicsSprite
+@interface Angler : CCPhysicsSprite
 {
     ChipmunkSpace *_space;
 }
 
 - (id)initWithSpace:(ChipmunkSpace *)space position:(CGPoint)position;
 - (void)jumpWithPower:(CGFloat)power vector:(cpVect)vector;
+- (void)jump;
+- (void)thrust;
+- (void)crash:(BOOL)alive;
 
 @end

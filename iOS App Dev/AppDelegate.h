@@ -2,8 +2,8 @@
 //  AppDelegate.h
 //  Tank
 //
-//  Created by Sveinn Fannar Kristjansson on 9/14/13.
-//  Copyright Sveinn Fannar Kristjansson 2013. All rights reserved.
+//  Created by Loli on 26.09.2013
+//  Copyright(c) Loli(r) 2013. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>

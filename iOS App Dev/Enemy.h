@@ -2,14 +2,14 @@
 //  Goal.h
 //  iOS App Dev
 //
-//  Created by Sveinn Fannar Kristjansson on 9/24/13.
-//  Copyright 2013 Sveinn Fannar Kristjansson. All rights reserved.
+//  Created by Loli on 26.09.2013
+//  Copyright(c) Loli(r) 2013. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
 #import "cocos2d.h"
 
-@interface Goal : CCPhysicsSprite {
+@interface Enemy : CCPhysicsSprite {
     
 }
 
