@@ -1,4 +1,4 @@
-Angry-Tanks
+Asteroid Angler
 ===========
 
-In class Tank project
+Sidescroller iPhone game
